@@ -129,5 +129,22 @@
     "fg_color": ["#0F3460", "#0F3460"],
     "hover_color": ["#16213E", "#16213E"],
     "text_color": ["#EAEAEA", "#EAEAEA"]
+  },
+  "CTkFont": {
+    "macOS": {
+      "family": "SF Display",
+      "size": 13,
+      "weight": "normal"
+    },
+    "Windows": {
+      "family": "Roboto",
+      "size": 13,
+      "weight": "normal"
+    },
+    "Linux": {
+      "family": "Roboto",
+      "size": 13,
+      "weight": "normal"
+    }
   }
 }
