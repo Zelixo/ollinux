@@ -235,6 +235,10 @@ class OllamaApp(ctk.CTk):
         self.stop_event = threading.Event()
         self.system_prompt = ""
         
+        self.target_text = ""
+        self.displayed_text = ""
+        self.network_active = False
+        
         # Layout Config
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -329,12 +333,16 @@ class OllamaApp(ctk.CTk):
             return
 
         self.is_generating = True
+        self.network_active = True
         self.stop_event.clear()
         self.send_btn.configure(text="Stop", fg_color="#C62828", hover_color="#B71C1C")
         
+        self.target_text = ""
+        self.displayed_text = ""
         self.current_ai_message = self.add_message("assistant", "")
         
         threading.Thread(target=self._generate_thread, args=(model, list(self.chat_history), self.system_prompt), daemon=True).start()
+        self.smooth_type_loop()
 
     def stop_generation(self):
         self.stop_event.set()
@@ -353,20 +361,56 @@ class OllamaApp(ctk.CTk):
             while True:
                 msg = self.msg_queue.get_nowait()
                 if msg["type"] == "chunk":
-                    self.current_ai_message.update_text(msg["content"])
-                    # Smart auto-scroll: only scroll if near the bottom
-                    # (This is tricky in CustomTkinter, simpler to just auto-scroll for now)
-                    self.chat_frame._parent_canvas.yview_moveto(1.0)
+                    self.target_text = msg["content"]
                 elif msg["type"] == "done":
-                    if self.is_generating: # Only append if we weren't interrupted oddly (though interrupted is still done)
-                        self.chat_history.append({"role": "assistant", "content": msg["full_text"]})
-                    
-                    self.is_generating = False
-                    self.send_btn.configure(text="Send", fg_color=["#3B8ED0", "#1F6AA5"], hover_color=["#36719F", "#144870"])
+                    self.target_text = msg["full_text"]
+                    self.network_active = False
         except queue.Empty:
             pass
         
-        self.after(50, self.check_queue) # Faster refresh rate
+        self.after(50, self.check_queue) # Keep processing network events
+
+    def smooth_type_loop(self):
+        if not self.is_generating:
+            return
+
+        # Check if we need to update
+        if len(self.displayed_text) < len(self.target_text):
+            # Calculate step size for smooth catch-up
+            diff = len(self.target_text) - len(self.displayed_text)
+            
+            # Dynamic speed: 
+            step = 1
+            delay = 30 # ms default typing speed
+            
+            if diff > 5:
+                step = 2
+                delay = 20
+            if diff > 20:
+                step = 5
+                delay = 10
+            if diff > 50: # Very far behind
+                step = 10
+                delay = 5
+
+            self.displayed_text = self.target_text[:len(self.displayed_text) + step]
+            self.current_ai_message.update_text(self.displayed_text)
+            self.chat_frame._parent_canvas.yview_moveto(1.0)
+            
+            self.after(delay, self.smooth_type_loop)
+            
+        elif not self.network_active:
+            # We caught up AND network is done
+            self.finish_generation()
+        else:
+            # Caught up but network still going, wait for more data
+            self.after(50, self.smooth_type_loop)
+
+    def finish_generation(self):
+        self.is_generating = False
+        self.network_active = False
+        self.chat_history.append({"role": "assistant", "content": self.displayed_text})
+        self.send_btn.configure(text="Send", fg_color=["#3B8ED0", "#1F6AA5"], hover_color=["#36719F", "#144870"])
 
     def add_message(self, role, text):
         msg = ChatMessage(self.chat_frame, role=role, text=text)
