@@ -11,7 +11,7 @@ from typing import List, Dict
 
 # Configuration
 ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
+ctk.set_default_color_theme("miku_wave.json")
 
 class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent, current_url, current_system_prompt):
@@ -53,15 +53,15 @@ class SettingsDialog(ctk.CTkToplevel):
 
 class CodeBlock(ctk.CTkFrame):
     def __init__(self, master, code: str, **kwargs):
-        super().__init__(master, fg_color="#1E1E1E", corner_radius=6, **kwargs)
+        super().__init__(master, fg_color="#0F0F1A", corner_radius=6, border_width=1, border_color="#39C5BB", **kwargs)
         self.code = code.strip()
 
         # Header (Language + Copy)
-        header_frame = ctk.CTkFrame(self, fg_color="#2D2D2D", height=30, corner_radius=6)
+        header_frame = ctk.CTkFrame(self, fg_color="#1A1A2E", height=30, corner_radius=6)
         header_frame.pack(fill="x", padx=1, pady=1)
         
         # Try to detect language from first line if possible (simplified)
-        lang_label = ctk.CTkLabel(header_frame, text="Code", font=("Consolas", 12, "bold"), text_color="#AAAAAA")
+        lang_label = ctk.CTkLabel(header_frame, text="Code", font=("Consolas", 12, "bold"), text_color="#39C5BB")
         lang_label.pack(side="left", padx=10, pady=2)
 
         self.copy_btn = ctk.CTkButton(
@@ -70,8 +70,9 @@ class CodeBlock(ctk.CTkFrame):
             width=60, 
             height=20, 
             font=("Arial", 11),
-            fg_color="#444444", 
-            hover_color="#555555",
+            fg_color="#39C5BB", 
+            text_color="#1A1A2E",
+            hover_color="#2D9E96",
             command=self.copy_to_clipboard
         )
         self.copy_btn.pack(side="right", padx=5, pady=2)
@@ -81,7 +82,7 @@ class CodeBlock(ctk.CTkFrame):
             self, 
             height=len(self.code.split('\n')) * 20 + 20, 
             font=("Consolas", 13), 
-            text_color="#D4D4D4",
+            text_color="#EAEAEA",
             fg_color="transparent",
             wrap="none"
         )
@@ -92,12 +93,12 @@ class CodeBlock(ctk.CTkFrame):
     def copy_to_clipboard(self):
         self.clipboard_clear()
         self.clipboard_append(self.code)
-        self.copy_btn.configure(text="Copied!", fg_color="#2E7D32")
-        self.after(2000, lambda: self.copy_btn.configure(text="Copy", fg_color="#444444"))
+        self.copy_btn.configure(text="Copied!", fg_color="#FF00FF", text_color="#FFFFFF")
+        self.after(2000, lambda: self.copy_btn.configure(text="Copy", fg_color="#39C5BB", text_color="#1A1A2E"))
 
 class ThinkBlock(ctk.CTkFrame):
     def __init__(self, master, text: str, **kwargs):
-        super().__init__(master, fg_color="transparent", corner_radius=6, border_width=1, border_color="#444444", **kwargs)
+        super().__init__(master, fg_color="#0F0F1A", corner_radius=6, border_width=1, border_color="#555555", **kwargs)
         self.text = text
         self.is_expanded = False
 
@@ -105,7 +106,8 @@ class ThinkBlock(ctk.CTkFrame):
             self, 
             text="▶ Thinking Process", 
             fg_color="transparent", 
-            text_color="#AAAAAA", 
+            text_color="#888888", 
+            hover_color="#1A1A2E",
             anchor="w",
             command=self.toggle,
             height=24,
@@ -116,7 +118,7 @@ class ThinkBlock(ctk.CTkFrame):
         self.content_label = ctk.CTkLabel(
             self, 
             text=text, 
-            text_color="#888888", 
+            text_color="#AAAAAA", 
             wraplength=550, 
             justify="left",
             font=("Roboto", 12, "italic")
@@ -146,17 +148,17 @@ class ChatMessage(ctk.CTkFrame):
         
         # Style configuration
         if role == "user":
-            self.fg_color = ("#E0E0E0", "#2B2B2B") 
-            self.text_color = ("#000000", "#FFFFFF")
+            self.fg_color = "#FF00FF" # Neon Pink (Hot Pink)
+            self.text_color = "#FFFFFF" # White text on Pink
             self.align = "e"
             self.lbl_anchor = "e"
         else:
-            self.fg_color = "transparent"
-            self.text_color = ("#000000", "#DCE4EE")
+            self.fg_color = "#16213E" # Dark Blue/Navy
+            self.text_color = "#39C5BB" # Miku Teal text
             self.align = "w"
             self.lbl_anchor = "w"
 
-        self.configure(fg_color=self.fg_color)
+        self.configure(fg_color=self.fg_color, border_width=2, border_color="#39C5BB" if role == "assistant" else "#FF00FF")
         self.render_content()
 
     def update_text(self, new_text):
