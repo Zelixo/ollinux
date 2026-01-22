@@ -99,6 +99,7 @@ class ChatMessage(ctk.CTkFrame):
         super().__init__(master, **kwargs)
         self.role = role
         self.text_content = text
+        self.block_widgets = [] # List of (type, widget) tuples
         
         # Style configuration
         if role == "user":
@@ -121,45 +122,102 @@ class ChatMessage(ctk.CTkFrame):
         self.text_content = new_text
         self.render_content()
 
-    def render_content(self):
-        # Clear existing widgets
-        for widget in self.winfo_children():
-            widget.destroy()
+    def _parse_blocks(self, text):
+        """Parses text into a list of (type, content) tuples."""
+        blocks = []
+        # Split by code blocks, capturing the delimiters
+        # We also look for unclosed code blocks at the end
+        parts = re.split(r'(```[\s\S]*?```)', text)
+        
+        for i, part in enumerate(parts):
+            if not part:
+                continue
+                
+            if part.startswith('```') and part.endswith('```'):
+                # Complete code block
+                content = part[3:-3]
+                # Language detection
+                first_newline = content.find('\n')
+                if first_newline != -1 and first_newline < 20:
+                   first_line = content[:first_newline].strip()
+                   if first_line.isalnum():
+                       content = content[first_newline+1:]
+                blocks.append(('CODE', content))
+            elif part.startswith('```') and i == len(parts) - 1:
+                # Unclosed code block at the end (streaming)
+                # Treat as code
+                content = part[3:]
+                # Try basic lang detection on unclosed block
+                first_newline = content.find('\n')
+                if first_newline != -1 and first_newline < 20:
+                   first_line = content[:first_newline].strip()
+                   if first_line.isalnum():
+                       content = content[first_newline+1:]
+                blocks.append(('CODE', content))
+            else:
+                # Regular text
+                if part.strip(): # Skip empty text blocks
+                     blocks.append(('TEXT', part))
+        
+        # If no blocks (empty string), return empty
+        if not blocks and text:
+             blocks.append(('TEXT', text))
+             
+        return blocks
 
-        if not self.text_content:
+    def render_content(self):
+        new_blocks = self._parse_blocks(self.text_content)
+        
+        # Check if we can just update existing widgets
+        can_update = True
+        if len(new_blocks) != len(self.block_widgets):
+            can_update = False
+        else:
+            for i, (b_type, b_content) in enumerate(new_blocks):
+                w_type, widget = self.block_widgets[i]
+                if b_type != w_type:
+                    can_update = False
+                    break
+        
+        if can_update:
+            # FAST PATH: Update content
+            for i, (b_type, b_content) in enumerate(new_blocks):
+                _, widget = self.block_widgets[i]
+                if b_type == 'TEXT':
+                     widget.configure(text=b_content)
+                elif b_type == 'CODE':
+                     # CodeBlock is complex, check if we need to update text
+                     # We need to access the text widget inside CodeBlock
+                     if widget.code != b_content.strip():
+                        widget.code = b_content.strip()
+                        widget.code_text.configure(state="normal")
+                        widget.code_text.delete("0.0", "end")
+                        widget.code_text.insert("0.0", widget.code)
+                        widget.code_text.configure(state="disabled")
             return
 
-        # Basic Markdown parsing for code blocks
-        # Split by ``` (code blocks)
-        parts = re.split(r'(```[\s\S]*?```)', self.text_content)
-        
-        for part in parts:
-            if part.startswith('```') and part.endswith('```'):
-                # It's a code block
-                code_content = part[3:-3]
-                # Remove optional language identifier from first line if present
-                first_newline = code_content.find('\n')
-                if first_newline != -1 and first_newline < 20: # Heuristic
-                   # Check if the first line is just a word (language name)
-                   first_line = code_content[:first_newline].strip()
-                   if first_line.isalnum():
-                       code_content = code_content[first_newline+1:]
-                
-                code_block = CodeBlock(self, code=code_content)
-                code_block.pack(fill="x", padx=10, pady=5, anchor="w") # Code always left-aligned
+        # SLOW PATH: Rebuild everything
+        for _, widget in self.block_widgets:
+            widget.destroy()
+        self.block_widgets = []
+
+        for b_type, content in new_blocks:
+            if b_type == 'CODE':
+                code_block = CodeBlock(self, code=content)
+                code_block.pack(fill="x", padx=10, pady=5, anchor="w")
+                self.block_widgets.append(('CODE', code_block))
             else:
-                # Normal text
-                if part.strip():
-                    label = ctk.CTkLabel(
-                        self, 
-                        text=part, 
-                        wraplength=550, 
-                        justify="left", 
-                        text_color=self.text_color,
-                        anchor=self.lbl_anchor,
-                        font=("Roboto", 14)
-                    )
-                    label.pack(padx=10, pady=5, anchor=self.align)
+                label = ctk.CTkLabel(
+                    self, 
+                    text=content, 
+                    wraplength=550, 
+                    justify="left", 
+                    text_color=self.text_color,
+                    anchor=self.lbl_anchor,
+                    font=("Roboto", 14)
+                )
+                label.pack(padx=10, pady=5, anchor=self.align)
+                self.block_widgets.append(('TEXT', label))
 
 class OllamaApp(ctk.CTk):
     def __init__(self):
