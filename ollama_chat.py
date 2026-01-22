@@ -19,7 +19,11 @@ class SettingsDialog(ctk.CTkToplevel):
         self.geometry("400x300")
         self.parent = parent
         self.transient(parent) # Make it modal-like
-        self.grab_set()
+        
+        # Ensure window is on top and visible before grabbing focus
+        self.lift()
+        self.focus_force()
+        self.after(100, self.grab_set)
         
         # URL
         self.url_label = ctk.CTkLabel(self, text="Ollama URL:")
