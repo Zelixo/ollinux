@@ -54,6 +54,23 @@ class OllamaClient:
         except requests.RequestException as e:
             yield f"\n[Connection Error: {e}]"
 
+    def pull_model(self, name: str) -> Generator[Dict[str, Any], None, None]:
+        """
+        Pulls a model from the Ollama library. Yields progress updates.
+        """
+        payload = {"name": name, "stream": True}
+        try:
+            with requests.post(f"{self.base_url}/api/pull", json=payload, stream=True, timeout=None) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            yield json.loads(line.decode('utf-8'))
+                        except json.JSONDecodeError:
+                            continue
+        except requests.RequestException as e:
+            yield {"error": str(e)}
+
     def check_connection(self) -> bool:
         """Checks if the server is reachable."""
         try:

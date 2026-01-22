@@ -6,6 +6,7 @@ from tkinter import messagebox, filedialog
 import json
 import re
 from ollama_client import OllamaClient
+from pull_dialog import PullModelDialog
 from typing import List, Dict
 
 # Configuration
@@ -302,7 +303,7 @@ class OllamaApp(ctk.CTk):
     def create_sidebar(self):
         self.sidebar_frame = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, rowspan=2, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(6, weight=1)
+        self.sidebar_frame.grid_rowconfigure(7, weight=1)
 
         self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="Ollama Chat", font=ctk.CTkFont(size=20, weight="bold"))
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
@@ -312,18 +313,26 @@ class OllamaApp(ctk.CTk):
 
         self.model_option_menu = ctk.CTkOptionMenu(self.sidebar_frame, values=["Loading..."])
         self.model_option_menu.grid(row=2, column=0, padx=20, pady=(10, 10))
+        
+        self.pull_model_btn = ctk.CTkButton(self.sidebar_frame, text="+ Pull Model", command=self.open_pull_dialog, fg_color="transparent", border_width=1, text_color=("gray10", "#DCE4EE"))
+        self.pull_model_btn.grid(row=3, column=0, padx=20, pady=(0, 10))
 
         self.clear_btn = ctk.CTkButton(self.sidebar_frame, text="Clear Chat", command=self.clear_chat, fg_color="transparent", border_width=2, text_color=("gray10", "#DCE4EE"))
-        self.clear_btn.grid(row=3, column=0, padx=20, pady=(10, 10))
+        self.clear_btn.grid(row=4, column=0, padx=20, pady=(10, 10))
         
         self.save_btn = ctk.CTkButton(self.sidebar_frame, text="Save Chat", command=self.save_chat_history)
-        self.save_btn.grid(row=4, column=0, padx=20, pady=(10, 10))
+        self.save_btn.grid(row=5, column=0, padx=20, pady=(10, 10))
         
         self.load_btn = ctk.CTkButton(self.sidebar_frame, text="Load Chat", command=self.load_chat_history)
-        self.load_btn.grid(row=5, column=0, padx=20, pady=(10, 10))
+        self.load_btn.grid(row=6, column=0, padx=20, pady=(10, 10))
+        
+        # Spacer
         
         self.settings_btn = ctk.CTkButton(self.sidebar_frame, text="Settings", command=self.open_settings)
-        self.settings_btn.grid(row=7, column=0, padx=20, pady=(10, 20))
+        self.settings_btn.grid(row=8, column=0, padx=20, pady=(10, 20))
+
+    def open_pull_dialog(self):
+        PullModelDialog(self, self.client, on_complete=self.load_models)
 
     def create_chat_area(self):
         self.chat_frame = ctk.CTkScrollableFrame(self, label_text="Conversation")
@@ -334,27 +343,24 @@ class OllamaApp(ctk.CTk):
         self.input_frame.grid(row=1, column=1, padx=(10, 10), pady=(10, 10), sticky="ew")
         self.input_frame.grid_columnconfigure(0, weight=1)
 
-        self.entry = ctk.CTkEntry(self.input_frame, placeholder_text="Type a message...")
+        self.entry = ctk.CTkTextbox(self.input_frame, height=60, wrap="word", font=("Roboto", 14))
         self.entry.grid(row=0, column=0, padx=(10, 10), pady=(10, 10), sticky="ew")
         self.entry.bind("<Return>", self.handle_enter)
 
-        self.send_btn = ctk.CTkButton(self.input_frame, text="Send", command=self.handle_send_click)
+        self.send_btn = ctk.CTkButton(self.input_frame, text="Send", command=self.handle_send_click, height=40)
         self.send_btn.grid(row=0, column=1, padx=(0, 10), pady=10)
 
-    def load_models(self):
-        threading.Thread(target=self._fetch_models_thread, daemon=True).start()
-
-    def _fetch_models_thread(self):
-        models = self.client.get_models()
-        if models:
-            self.model_option_menu.configure(values=models)
-            self.model_option_menu.set(models[0])
-        else:
-            self.model_option_menu.configure(values=["No Connection"])
+    # ... (other methods)
 
     def handle_enter(self, event):
+        if event.state & 1: # Shift key mask (usually 1 or 4 depending on OS, but standard in Tk)
+             # Shift+Enter -> Insert newline (default behavior)
+             return None 
+        
+        # Enter -> Send message
         if not self.is_generating:
             self.start_generation()
+        return "break" # Prevent default newline insertion
 
     def handle_send_click(self):
         if self.is_generating:
@@ -363,11 +369,11 @@ class OllamaApp(ctk.CTk):
             self.start_generation()
 
     def start_generation(self):
-        text = self.entry.get().strip()
+        text = self.entry.get("0.0", "end").strip()
         if not text:
             return
             
-        self.entry.delete(0, "end")
+        self.entry.delete("0.0", "end")
         
         # User Message
         self.add_message("user", text)
