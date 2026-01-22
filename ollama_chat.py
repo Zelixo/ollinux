@@ -4,6 +4,7 @@ import queue
 import tkinter as tk
 from tkinter import messagebox, filedialog
 import json
+import re
 from ollama_client import OllamaClient
 from typing import List, Dict
 
@@ -17,6 +18,8 @@ class SettingsDialog(ctk.CTkToplevel):
         self.title("Settings")
         self.geometry("400x300")
         self.parent = parent
+        self.transient(parent) # Make it modal-like
+        self.grab_set()
         
         # URL
         self.url_label = ctk.CTkLabel(self, text="Ollama URL:")
@@ -43,41 +46,116 @@ class SettingsDialog(ctk.CTkToplevel):
         self.parent.update_settings(new_url, new_prompt)
         self.destroy()
 
+class CodeBlock(ctk.CTkFrame):
+    def __init__(self, master, code: str, **kwargs):
+        super().__init__(master, fg_color="#1E1E1E", corner_radius=6, **kwargs)
+        self.code = code.strip()
+
+        # Header (Language + Copy)
+        header_frame = ctk.CTkFrame(self, fg_color="#2D2D2D", height=30, corner_radius=6)
+        header_frame.pack(fill="x", padx=1, pady=1)
+        
+        # Try to detect language from first line if possible (simplified)
+        lang_label = ctk.CTkLabel(header_frame, text="Code", font=("Consolas", 12, "bold"), text_color="#AAAAAA")
+        lang_label.pack(side="left", padx=10, pady=2)
+
+        self.copy_btn = ctk.CTkButton(
+            header_frame, 
+            text="Copy", 
+            width=60, 
+            height=20, 
+            font=("Arial", 11),
+            fg_color="#444444", 
+            hover_color="#555555",
+            command=self.copy_to_clipboard
+        )
+        self.copy_btn.pack(side="right", padx=5, pady=2)
+
+        # Code Content
+        self.code_text = ctk.CTkTextbox(
+            self, 
+            height=len(self.code.split('\n')) * 20 + 20, 
+            font=("Consolas", 13), 
+            text_color="#D4D4D4",
+            fg_color="transparent",
+            wrap="none"
+        )
+        self.code_text.insert("0.0", self.code)
+        self.code_text.configure(state="disabled")
+        self.code_text.pack(fill="x", padx=5, pady=5)
+
+    def copy_to_clipboard(self):
+        self.clipboard_clear()
+        self.clipboard_append(self.code)
+        self.copy_btn.configure(text="Copied!", fg_color="#2E7D32")
+        self.after(2000, lambda: self.copy_btn.configure(text="Copy", fg_color="#444444"))
+
 class ChatMessage(ctk.CTkFrame):
     def __init__(self, master, role: str, text: str, **kwargs):
         super().__init__(master, **kwargs)
         self.role = role
         self.text_content = text
         
-        # Style configuration based on role
+        # Style configuration
         if role == "user":
             self.fg_color = ("#E0E0E0", "#2B2B2B") 
             self.text_color = ("#000000", "#FFFFFF")
-            align = "e"
-            lbl_anchor = "e"
+            self.align = "e"
+            self.lbl_anchor = "e"
         else:
             self.fg_color = "transparent"
             self.text_color = ("#000000", "#DCE4EE")
-            align = "w"
-            lbl_anchor = "w"
+            self.align = "w"
+            self.lbl_anchor = "w"
 
         self.configure(fg_color=self.fg_color)
-
-        # Content Label
-        self.label = ctk.CTkLabel(
-            self, 
-            text=text, 
-            wraplength=550, 
-            justify="left", 
-            text_color=self.text_color,
-            anchor=lbl_anchor,
-            font=("Roboto", 14)
-        )
-        self.label.pack(padx=10, pady=5, anchor=align)
+        self.render_content()
 
     def update_text(self, new_text):
+        if self.text_content == new_text:
+            return
         self.text_content = new_text
-        self.label.configure(text=self.text_content)
+        self.render_content()
+
+    def render_content(self):
+        # Clear existing widgets
+        for widget in self.winfo_children():
+            widget.destroy()
+
+        if not self.text_content:
+            return
+
+        # Basic Markdown parsing for code blocks
+        # Split by ``` (code blocks)
+        parts = re.split(r'(```[\s\S]*?```)', self.text_content)
+        
+        for part in parts:
+            if part.startswith('```') and part.endswith('```'):
+                # It's a code block
+                code_content = part[3:-3]
+                # Remove optional language identifier from first line if present
+                first_newline = code_content.find('\n')
+                if first_newline != -1 and first_newline < 20: # Heuristic
+                   # Check if the first line is just a word (language name)
+                   first_line = code_content[:first_newline].strip()
+                   if first_line.isalnum():
+                       code_content = code_content[first_newline+1:]
+                
+                code_block = CodeBlock(self, code=code_content)
+                code_block.pack(fill="x", padx=10, pady=5, anchor="w") # Code always left-aligned
+            else:
+                # Normal text
+                if part.strip():
+                    label = ctk.CTkLabel(
+                        self, 
+                        text=part, 
+                        wraplength=550, 
+                        justify="left", 
+                        text_color=self.text_color,
+                        anchor=self.lbl_anchor,
+                        font=("Roboto", 14)
+                    )
+                    label.pack(padx=10, pady=5, anchor=self.align)
 
 class OllamaApp(ctk.CTk):
     def __init__(self):
@@ -92,6 +170,7 @@ class OllamaApp(ctk.CTk):
         self.msg_queue = queue.Queue()
         self.chat_history: List[Dict[str, str]] = [] 
         self.is_generating = False
+        self.stop_event = threading.Event()
         self.system_prompt = ""
         
         # Layout Config
@@ -130,8 +209,6 @@ class OllamaApp(ctk.CTk):
         self.load_btn = ctk.CTkButton(self.sidebar_frame, text="Load Chat", command=self.load_chat_history)
         self.load_btn.grid(row=5, column=0, padx=20, pady=(10, 10))
         
-        # Spacer at row 6
-        
         self.settings_btn = ctk.CTkButton(self.sidebar_frame, text="Settings", command=self.open_settings)
         self.settings_btn.grid(row=7, column=0, padx=20, pady=(10, 20))
 
@@ -146,9 +223,9 @@ class OllamaApp(ctk.CTk):
 
         self.entry = ctk.CTkEntry(self.input_frame, placeholder_text="Type a message...")
         self.entry.grid(row=0, column=0, padx=(10, 10), pady=(10, 10), sticky="ew")
-        self.entry.bind("<Return>", self.send_event)
+        self.entry.bind("<Return>", self.handle_enter)
 
-        self.send_btn = ctk.CTkButton(self.input_frame, text="Send", command=self.send_event)
+        self.send_btn = ctk.CTkButton(self.input_frame, text="Send", command=self.handle_send_click)
         self.send_btn.grid(row=0, column=1, padx=(0, 10), pady=10)
 
     def load_models(self):
@@ -162,10 +239,17 @@ class OllamaApp(ctk.CTk):
         else:
             self.model_option_menu.configure(values=["No Connection"])
 
-    def send_event(self, event=None):
+    def handle_enter(self, event):
+        if not self.is_generating:
+            self.start_generation()
+
+    def handle_send_click(self):
         if self.is_generating:
-            return
-        
+            self.stop_generation()
+        else:
+            self.start_generation()
+
+    def start_generation(self):
         text = self.entry.get().strip()
         if not text:
             return
@@ -176,22 +260,27 @@ class OllamaApp(ctk.CTk):
         self.add_message("user", text)
         self.chat_history.append({"role": "user", "content": text})
         
-        # Start AI generation
+        # Check model
         model = self.model_option_menu.get()
         if model == "Loading..." or model == "No Connection":
             messagebox.showerror("Error", "No model selected or server unreachable.")
             return
 
         self.is_generating = True
-        self.send_btn.configure(state="disabled")
+        self.stop_event.clear()
+        self.send_btn.configure(text="Stop", fg_color="#C62828", hover_color="#B71C1C")
         
         self.current_ai_message = self.add_message("assistant", "")
         
         threading.Thread(target=self._generate_thread, args=(model, list(self.chat_history), self.system_prompt), daemon=True).start()
 
+    def stop_generation(self):
+        self.stop_event.set()
+
     def _generate_thread(self, model, history, system_prompt):
         full_response = ""
-        for chunk in self.client.chat_stream(model, history, system_prompt):
+        # Pass stop_event to the client
+        for chunk in self.client.chat_stream(model, history, system_prompt, self.stop_event):
             full_response += chunk
             self.msg_queue.put({"type": "chunk", "content": full_response})
         
@@ -203,15 +292,19 @@ class OllamaApp(ctk.CTk):
                 msg = self.msg_queue.get_nowait()
                 if msg["type"] == "chunk":
                     self.current_ai_message.update_text(msg["content"])
+                    # Smart auto-scroll: only scroll if near the bottom
+                    # (This is tricky in CustomTkinter, simpler to just auto-scroll for now)
                     self.chat_frame._parent_canvas.yview_moveto(1.0)
                 elif msg["type"] == "done":
-                    self.chat_history.append({"role": "assistant", "content": msg["full_text"]})
+                    if self.is_generating: # Only append if we weren't interrupted oddly (though interrupted is still done)
+                        self.chat_history.append({"role": "assistant", "content": msg["full_text"]})
+                    
                     self.is_generating = False
-                    self.send_btn.configure(state="normal")
+                    self.send_btn.configure(text="Send", fg_color=["#3B8ED0", "#1F6AA5"], hover_color=["#36719F", "#144870"])
         except queue.Empty:
             pass
         
-        self.after(100, self.check_queue)
+        self.after(50, self.check_queue) # Faster refresh rate
 
     def add_message(self, role, text):
         msg = ChatMessage(self.chat_frame, role=role, text=text)
@@ -229,7 +322,6 @@ class OllamaApp(ctk.CTk):
     def update_settings(self, new_url, new_prompt):
         self.client.base_url = new_url
         self.system_prompt = new_prompt
-        # Reload models if URL changed
         self.load_models()
 
     def save_chat_history(self):

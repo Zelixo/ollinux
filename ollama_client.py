@@ -1,5 +1,6 @@
 import requests
 import json
+import threading
 from typing import List, Dict, Generator, Any
 
 class OllamaClient:
@@ -21,7 +22,7 @@ class OllamaClient:
             print(f"Error fetching models: {e}")
             return []
 
-    def chat_stream(self, model: str, messages: List[Dict[str, str]], system_prompt: str = None) -> Generator[str, None, None]:
+    def chat_stream(self, model: str, messages: List[Dict[str, str]], system_prompt: str = None, stop_event: threading.Event = None) -> Generator[str, None, None]:
         """
         Streams the chat response from the Ollama server.
         """
@@ -33,14 +34,14 @@ class OllamaClient:
         
         if system_prompt:
              # Insert system prompt at the beginning if provided
-             # Alternatively, some models verify system prompts differently, 
-             # but prepending a 'system' role message is standard for chat APIs.
              payload["messages"].insert(0, {"role": "system", "content": system_prompt})
 
         try:
             with requests.post(f"{self.base_url}/api/chat", json=payload, stream=True, timeout=30) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
+                    if stop_event and stop_event.is_set():
+                        break
                     if line:
                         try:
                             body = json.loads(line.decode('utf-8'))
