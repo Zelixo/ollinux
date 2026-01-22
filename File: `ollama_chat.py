@@ -1,11 +1,16 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import requests
+import customtkinter
 
-class OllamaChatApp:
+customtkinter.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
+customtkinter.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
+
+class OllamaChatApp(customtkinter.CTk):
     def __init__(self, root):
-        self.root = root
-        self.root.title("Ollama Chat")
+        super().__init__()
+        self.title("Ollama Chat")
+        self.geometry("800x600")
 
         self.server_url = "http://localhost:11434"  # Default Ollama server URL
         self.models = []
@@ -14,35 +19,35 @@ class OllamaChatApp:
         self.setup_ui()
 
     def setup_ui(self):
-        main_frame = ttk.Frame(self.root)
-        main_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        main_frame = customtkinter.CTkFrame(self)
+        main_frame.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
 
         # Model Selection
-        model_label = ttk.Label(main_frame, text="Select Model:")
-        model_label.grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        model_label = customtkinter.CTkLabel(main_frame, text="Select Model:")
+        model_label.grid(row=0, column=0, padx=10, pady=10, sticky=tk.W)
 
         self.model_combobox = ttk.Combobox(main_frame, textvariable=self.selected_model)
-        self.model_combobox.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W+tk.E)
+        self.model_combobox.grid(row=0, column=1, padx=10, pady=10, sticky=tk.W+tk.E)
         self.model_combobox.bind("<<ComboboxSelected>>", self.on_model_select)
 
         # Chat Input
-        chat_label = ttk.Label(main_frame, text="Your Message:")
-        chat_label.grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        chat_label = customtkinter.CTkLabel(main_frame, text="Your Message:")
+        chat_label.grid(row=1, column=0, padx=10, pady=10, sticky=tk.W)
 
-        self.chat_entry = tk.Entry(main_frame, width=50)
-        self.chat_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W+tk.E)
+        self.chat_entry = customtkinter.CTkEntry(main_frame, width=500)
+        self.chat_entry.grid(row=1, column=1, padx=10, pady=10, sticky=tk.W+tk.E)
         self.chat_entry.bind("<Return>", self.send_message)
 
         # Send Button
-        send_button = ttk.Button(main_frame, text="Send", command=self.send_message)
-        send_button.grid(row=1, column=2, padx=5, pady=5)
+        send_button = customtkinter.CTkButton(main_frame, text="Send", command=self.send_message)
+        send_button.grid(row=1, column=2, padx=10, pady=10)
 
         # Chat Output
-        chat_output_label = ttk.Label(main_frame, text="Chat:")
-        chat_output_label.grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        chat_output_label = customtkinter.CTkLabel(main_frame, text="Chat:")
+        chat_output_label.grid(row=2, column=0, padx=10, pady=10, sticky=tk.W)
 
-        self.chat_text = tk.Text(main_frame, height=10, width=60)
-        self.chat_text.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky=tk.NSEW)
+        self.chat_text = customtkinter.CTkTextbox(main_frame, height=300, width=750)
+        self.chat_text.grid(row=3, column=0, columnspan=3, padx=10, pady=10, sticky=tk.NSEW)
         self.chat_text.config(state=tk.DISABLED)
 
         # Load Models
@@ -96,6 +101,5 @@ class OllamaChatApp:
             messagebox.showerror("Error", f"Request failed: {e}")
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = OllamaChatApp(root)
-    root.mainloop()
+    app = OllamaChatApp()
+    app.mainloop()
