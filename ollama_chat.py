@@ -94,6 +94,48 @@ class CodeBlock(ctk.CTkFrame):
         self.copy_btn.configure(text="Copied!", fg_color="#2E7D32")
         self.after(2000, lambda: self.copy_btn.configure(text="Copy", fg_color="#444444"))
 
+class ThinkBlock(ctk.CTkFrame):
+    def __init__(self, master, text: str, **kwargs):
+        super().__init__(master, fg_color="transparent", corner_radius=6, border_width=1, border_color="#444444", **kwargs)
+        self.text = text
+        self.is_expanded = False
+
+        self.header_btn = ctk.CTkButton(
+            self, 
+            text="▶ Thinking Process", 
+            fg_color="transparent", 
+            text_color="#AAAAAA", 
+            anchor="w",
+            command=self.toggle,
+            height=24,
+            font=("Roboto", 12, "italic")
+        )
+        self.header_btn.pack(fill="x", padx=5, pady=2)
+        
+        self.content_label = ctk.CTkLabel(
+            self, 
+            text=text, 
+            text_color="#888888", 
+            wraplength=550, 
+            justify="left",
+            font=("Roboto", 12, "italic")
+        )
+        # Initially hidden
+        
+    def toggle(self):
+        self.is_expanded = not self.is_expanded
+        if self.is_expanded:
+            self.header_btn.configure(text="▼ Thinking Process")
+            self.content_label.pack(fill="x", padx=10, pady=(0, 10))
+        else:
+            self.header_btn.configure(text="▶ Thinking Process")
+            self.content_label.pack_forget()
+
+    def update_content(self, new_text):
+        if self.text != new_text:
+            self.text = new_text
+            self.content_label.configure(text=new_text)
+
 class ChatMessage(ctk.CTkFrame):
     def __init__(self, master, role: str, text: str, **kwargs):
         super().__init__(master, **kwargs)
@@ -125,44 +167,45 @@ class ChatMessage(ctk.CTkFrame):
     def _parse_blocks(self, text):
         """Parses text into a list of (type, content) tuples."""
         blocks = []
-        # Split by code blocks, capturing the delimiters
-        # We also look for unclosed code blocks at the end
-        parts = re.split(r'(```[\s\S]*?```)', text)
         
-        for i, part in enumerate(parts):
-            if not part:
-                continue
-                
-            if part.startswith('```') and part.endswith('```'):
-                # Complete code block
-                content = part[3:-3]
-                # Language detection
-                first_newline = content.find('\n')
-                if first_newline != -1 and first_newline < 20:
-                   first_line = content[:first_newline].strip()
-                   if first_line.isalnum():
-                       content = content[first_newline+1:]
-                blocks.append(('CODE', content))
-            elif part.startswith('```') and i == len(parts) - 1:
-                # Unclosed code block at the end (streaming)
-                # Treat as code
-                content = part[3:]
-                # Try basic lang detection on unclosed block
-                first_newline = content.find('\n')
-                if first_newline != -1 and first_newline < 20:
-                   first_line = content[:first_newline].strip()
-                   if first_line.isalnum():
-                       content = content[first_newline+1:]
-                blocks.append(('CODE', content))
+        # 1. Split by <think>...</think> first
+        # Regex to capture think blocks
+        think_parts = re.split(r'(<think>[\s\S]*?</think>)', text)
+        
+        for t_part in think_parts:
+            if not t_part: continue
+            
+            if t_part.startswith('<think>') and t_part.endswith('</think>'):
+                content = t_part[7:-8].strip()
+                if content:
+                    blocks.append(('THINK', content))
+            elif t_part.startswith('<think>'): 
+                # Unclosed think block (streaming)
+                content = t_part[7:].strip()
+                blocks.append(('THINK', content))
             else:
-                # Regular text
-                if part.strip(): # Skip empty text blocks
-                     blocks.append(('TEXT', part))
-        
-        # If no blocks (empty string), return empty
-        if not blocks and text:
-             blocks.append(('TEXT', text))
-             
+                # Normal content (Mixed text and code)
+                # Now parse for Code Blocks within this part
+                code_parts = re.split(r'(```[\s\S]*?```)', t_part)
+                for i, c_part in enumerate(code_parts):
+                    if not c_part: continue
+                    
+                    if c_part.startswith('```') and c_part.endswith('```'):
+                         content = c_part[3:-3]
+                         first_newline = content.find('\n')
+                         if first_newline != -1 and first_newline < 20:
+                            first_line = content[:first_newline].strip()
+                            if first_line.isalnum():
+                                content = content[first_newline+1:]
+                         blocks.append(('CODE', content))
+                    elif c_part.startswith('```') and i == len(code_parts) - 1 and len(code_parts) > 1:
+                         # Unclosed code block at absolute end
+                         content = c_part[3:]
+                         blocks.append(('CODE', content))
+                    else:
+                         if c_part.strip():
+                             blocks.append(('TEXT', c_part))
+
         return blocks
 
     def render_content(self):
@@ -186,14 +229,14 @@ class ChatMessage(ctk.CTkFrame):
                 if b_type == 'TEXT':
                      widget.configure(text=b_content)
                 elif b_type == 'CODE':
-                     # CodeBlock is complex, check if we need to update text
-                     # We need to access the text widget inside CodeBlock
                      if widget.code != b_content.strip():
                         widget.code = b_content.strip()
                         widget.code_text.configure(state="normal")
                         widget.code_text.delete("0.0", "end")
                         widget.code_text.insert("0.0", widget.code)
                         widget.code_text.configure(state="disabled")
+                elif b_type == 'THINK':
+                    widget.update_content(b_content)
             return
 
         # SLOW PATH: Rebuild everything
@@ -206,6 +249,10 @@ class ChatMessage(ctk.CTkFrame):
                 code_block = CodeBlock(self, code=content)
                 code_block.pack(fill="x", padx=10, pady=5, anchor="w")
                 self.block_widgets.append(('CODE', code_block))
+            elif b_type == 'THINK':
+                think_block = ThinkBlock(self, text=content)
+                think_block.pack(fill="x", padx=10, pady=5, anchor="w")
+                self.block_widgets.append(('THINK', think_block))
             else:
                 label = ctk.CTkLabel(
                     self, 
