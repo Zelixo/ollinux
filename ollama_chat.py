@@ -352,7 +352,16 @@ class OllamaApp(ctk.CTk):
         self.send_btn = ctk.CTkButton(self.input_frame, text="Send", command=self.handle_send_click, height=40)
         self.send_btn.grid(row=0, column=1, padx=(0, 10), pady=10)
 
-    # ... (other methods)
+    def load_models(self):
+        threading.Thread(target=self._fetch_models_thread, daemon=True).start()
+
+    def _fetch_models_thread(self):
+        models = self.client.get_models()
+        if models:
+            self.model_option_menu.configure(values=models)
+            self.model_option_menu.set(models[0])
+        else:
+            self.model_option_menu.configure(values=["No Connection"])
 
     def handle_enter(self, event):
         if event.state & 1: # Shift key mask (usually 1 or 4 depending on OS, but standard in Tk)
