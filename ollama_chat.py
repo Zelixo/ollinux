@@ -89,8 +89,8 @@ class CodeBlock(ctk.CTkFrame):
         # Code Content
         self.code_text = ctk.CTkTextbox(
             self, 
-            height=len(self.code.split('\n')) * 20 + 20, 
-            font=("Consolas", 13), 
+            height=len(self.code.split('\n')) * 24 + 20, 
+            font=("Consolas", 14), 
             text_color="#EAEAEA",
             fg_color="transparent",
             wrap="none"
@@ -120,7 +120,7 @@ class ThinkBlock(ctk.CTkFrame):
             anchor="w",
             command=self.toggle,
             height=24,
-            font=("Roboto", 12, "italic")
+            font=("Roboto", 14, "italic")
         )
         self.header_btn.pack(fill="x", padx=5, pady=2)
         
@@ -130,7 +130,7 @@ class ThinkBlock(ctk.CTkFrame):
             text_color="#AAAAAA", 
             wraplength=master.winfo_width() - 60, # Initial guess
             justify="left",
-            font=("Roboto", 12, "italic")
+            font=("Roboto", 14, "italic")
         )
         # Initially hidden
         
@@ -167,15 +167,14 @@ class ChatMessage(ctk.CTkFrame):
             self.text_color = USER_TEXT_COLOR
             self.align = "e"
             self.lbl_anchor = "e"
-            border = USER_BG_COLOR
         else:
             self.fg_color = AI_BG_COLOR
             self.text_color = AI_TEXT_COLOR
             self.align = "w"
             self.lbl_anchor = "w"
-            border = BORDER_COLOR
 
-        self.configure(fg_color=self.fg_color, border_width=2, border_color=border)
+        # Polished Look: No border, rounder corners for bubble effect
+        self.configure(fg_color=self.fg_color, corner_radius=16)
         
         # Listen for resize events on the PARENT (the scrollable frame's inner frame) to update text wrapping
         self.bind("<Configure>", self.on_resize)
@@ -185,12 +184,15 @@ class ChatMessage(ctk.CTkFrame):
     def on_resize(self, event):
         # Update wraplength for all text labels
         # Width - padding (approx 40px)
-        new_wrap = event.width - 40
+        new_wrap = event.width - 50 # Increased buffer
         if new_wrap < 100: new_wrap = 100
+        list_wrap = new_wrap - 20
         
         for b_type, widget in self.block_widgets:
-            if b_type == 'TEXT':
+            if b_type == 'TEXT' or b_type.startswith('HEADER'):
                 widget.configure(wraplength=new_wrap)
+            elif b_type == 'LIST_ITEM':
+                widget.configure(wraplength=list_wrap)
 
     def update_text(self, new_text):
         if self.text_content == new_text:
@@ -199,11 +201,10 @@ class ChatMessage(ctk.CTkFrame):
         self.render_content()
 
     def _parse_blocks(self, text):
-        """Parses text into a list of (type, content) tuples."""
+        """Parses text into a list of (type, content) tuples, handling Code and Markdown blocks."""
         blocks = []
         
         # 1. Split by <think>...</think> first
-        # Regex to capture think blocks
         think_parts = re.split(r'(<think>[\s\S]*?</think>)', text)
         
         for t_part in think_parts:
@@ -214,12 +215,10 @@ class ChatMessage(ctk.CTkFrame):
                 if content:
                     blocks.append(('THINK', content))
             elif t_part.startswith('<think>'): 
-                # Unclosed think block (streaming)
                 content = t_part[7:].strip()
                 blocks.append(('THINK', content))
             else:
-                # Normal content (Mixed text and code)
-                # Now parse for Code Blocks within this part
+                # 2. Split by Code Blocks
                 code_parts = re.split(r'(```[\s\S]*?```)', t_part)
                 for i, c_part in enumerate(code_parts):
                     if not c_part: continue
@@ -233,14 +232,47 @@ class ChatMessage(ctk.CTkFrame):
                                 content = content[first_newline+1:]
                          blocks.append(('CODE', content))
                     elif c_part.startswith('```') and i == len(code_parts) - 1 and len(code_parts) > 1:
-                         # Unclosed code block at absolute end
                          content = c_part[3:]
                          blocks.append(('CODE', content))
                     else:
                          if c_part.strip():
-                             blocks.append(('TEXT', c_part))
+                             # 3. Parse Markdown Blocks (Headers, Lists) within text
+                             self._parse_markdown_text(c_part, blocks)
 
         return blocks
+
+    def _parse_markdown_text(self, text, blocks_list):
+        """Sub-parses text for Headers and Lists."""
+        lines = text.split('\n')
+        current_paragraph = []
+
+        def flush_paragraph():
+            if current_paragraph:
+                blocks_list.append(('TEXT', '\n'.join(current_paragraph)))
+                current_paragraph.clear()
+
+        for line in lines:
+            stripped = line.strip()
+            
+            # Header (### Title)
+            if stripped.startswith('#') and len(stripped) > 1 and stripped[1] != '#': # Simple check for H1-H6
+                flush_paragraph()
+                level = len(line.split(' ')[0])
+                content = line.lstrip('#').strip()
+                # Limit level to reasonable range
+                if level > 3: level = 3
+                blocks_list.append((f'HEADER_{level}', content))
+            
+            # List Item (- Item or * Item)
+            elif stripped.startswith(('-', '*')) and len(stripped) > 1 and stripped[1] == ' ':
+                flush_paragraph()
+                content = stripped[1:].strip()
+                blocks_list.append(('LIST_ITEM', content))
+                
+            else:
+                current_paragraph.append(line)
+        
+        flush_paragraph()
 
     def render_content(self):
         new_blocks = self._parse_blocks(self.text_content)
@@ -262,6 +294,10 @@ class ChatMessage(ctk.CTkFrame):
                 _, widget = self.block_widgets[i]
                 if b_type == 'TEXT':
                      widget.configure(text=b_content)
+                elif b_type.startswith('HEADER'):
+                     widget.configure(text=b_content)
+                elif b_type == 'LIST_ITEM':
+                     widget.configure(text=f"• {b_content}")
                 elif b_type == 'CODE':
                      if widget.code != b_content.strip():
                         widget.code = b_content.strip()
@@ -279,18 +315,47 @@ class ChatMessage(ctk.CTkFrame):
         self.block_widgets = []
 
         current_width = self.winfo_width()
-        wrap_len = current_width - 40 if current_width > 100 else 550
+        # Dynamic wraplength
+        wrap_len = current_width - 50 if current_width > 100 else 550
+        list_wrap_len = wrap_len - 20 # Indent compensation
 
         for b_type, content in new_blocks:
             if b_type == 'CODE':
                 code_block = CodeBlock(self, code=content)
-                code_block.pack(fill="x", padx=10, pady=5, anchor="w")
+                code_block.pack(fill="x", padx=15, pady=8, anchor="w")
                 self.block_widgets.append(('CODE', code_block))
             elif b_type == 'THINK':
                 think_block = ThinkBlock(self, text=content)
-                think_block.pack(fill="x", padx=10, pady=5, anchor="w")
+                think_block.pack(fill="x", padx=15, pady=8, anchor="w")
                 self.block_widgets.append(('THINK', think_block))
-            else:
+            elif b_type.startswith('HEADER'):
+                # Heuristics for size: H1=24, H2=20, H3+=18
+                size = 24 if '1' in b_type else (20 if '2' in b_type else 18)
+                label = ctk.CTkLabel(
+                    self, 
+                    text=content, 
+                    wraplength=wrap_len, 
+                    justify="left", 
+                    text_color="#39C5BB", # Miku Teal for headers
+                    anchor=self.lbl_anchor,
+                    font=("Roboto", size, "bold")
+                )
+                label.pack(padx=20, pady=(15, 5), anchor=self.align)
+                self.block_widgets.append((b_type, label))
+            elif b_type == 'LIST_ITEM':
+                 label = ctk.CTkLabel(
+                    self, 
+                    text=f"• {content}", 
+                    wraplength=list_wrap_len, 
+                    justify="left", 
+                    text_color=self.text_color,
+                    anchor=self.lbl_anchor,
+                    font=("Roboto", 16)
+                )
+                 # Indented pack
+                 label.pack(padx=(35, 20), pady=2, anchor=self.align)
+                 self.block_widgets.append((b_type, label))
+            else: # TEXT
                 label = ctk.CTkLabel(
                     self, 
                     text=content, 
@@ -298,9 +363,9 @@ class ChatMessage(ctk.CTkFrame):
                     justify="left", 
                     text_color=self.text_color,
                     anchor=self.lbl_anchor,
-                    font=("Roboto", 14)
+                    font=("Roboto", 16)
                 )
-                label.pack(padx=10, pady=5, anchor=self.align)
+                label.pack(padx=20, pady=5, anchor=self.align)
                 self.block_widgets.append(('TEXT', label))
 
 class OllamaApp(ctk.CTk):
