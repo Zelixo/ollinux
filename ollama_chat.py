@@ -7,6 +7,7 @@ import json
 import re
 from ollama_client import OllamaClient
 from pull_dialog import PullModelDialog
+from config_manager import ConfigManager
 from typing import List, Dict
 
 # Configuration
@@ -277,13 +278,16 @@ class OllamaApp(ctk.CTk):
         self.title("Ollama Chat Pro")
         self.geometry("1000x700")
         
+        # Load Config
+        self.config = ConfigManager.load_config()
+        
         # State
-        self.client = OllamaClient()
+        self.client = OllamaClient(base_url=self.config.get("ollama_url", "http://localhost:11434"))
         self.msg_queue = queue.Queue()
         self.chat_history: List[Dict[str, str]] = [] 
         self.is_generating = False
         self.stop_event = threading.Event()
-        self.system_prompt = ""
+        self.system_prompt = self.config.get("system_prompt", "")
         
         self.target_text = ""
         self.displayed_text = ""
@@ -313,7 +317,7 @@ class OllamaApp(ctk.CTk):
         self.model_label = ctk.CTkLabel(self.sidebar_frame, text="Model:", anchor="w")
         self.model_label.grid(row=1, column=0, padx=20, pady=(10, 0))
 
-        self.model_option_menu = ctk.CTkOptionMenu(self.sidebar_frame, values=["Loading..."])
+        self.model_option_menu = ctk.CTkOptionMenu(self.sidebar_frame, values=["Loading..."], command=self.on_model_change)
         self.model_option_menu.grid(row=2, column=0, padx=20, pady=(10, 10))
         
         self.pull_model_btn = ctk.CTkButton(self.sidebar_frame, text="+ Pull Model", command=self.open_pull_dialog, fg_color="transparent", border_width=1, text_color=("gray10", "#DCE4EE"))
@@ -335,6 +339,10 @@ class OllamaApp(ctk.CTk):
 
     def open_pull_dialog(self):
         PullModelDialog(self, self.client, on_complete=self.load_models)
+
+    def on_model_change(self, selected_model):
+        self.config["last_model"] = selected_model
+        ConfigManager.save_config(self.config)
 
     def create_chat_area(self):
         self.chat_frame = ctk.CTkScrollableFrame(self, label_text="Conversation")
@@ -359,7 +367,15 @@ class OllamaApp(ctk.CTk):
         models = self.client.get_models()
         if models:
             self.model_option_menu.configure(values=models)
-            self.model_option_menu.set(models[0])
+            
+            # Restore last used model if available
+            last_model = self.config.get("last_model")
+            if last_model and last_model in models:
+                self.model_option_menu.set(last_model)
+            else:
+                self.model_option_menu.set(models[0])
+                # Update config with default if we had to fall back
+                self.on_model_change(models[0])
         else:
             self.model_option_menu.configure(values=["No Connection"])
 
@@ -492,6 +508,11 @@ class OllamaApp(ctk.CTk):
     def update_settings(self, new_url, new_prompt):
         self.client.base_url = new_url
         self.system_prompt = new_prompt
+        
+        self.config["ollama_url"] = new_url
+        self.config["system_prompt"] = new_prompt
+        ConfigManager.save_config(self.config)
+        
         self.load_models()
 
     def save_chat_history(self):
