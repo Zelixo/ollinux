@@ -18,13 +18,13 @@ class OllamaClient:
             data = response.json()
             # Extract model names from the response
             return [model['name'] for model in data.get('models', [])]
-        except requests.RequestException as e:
-            print(f"Error fetching models: {e}")
+        except requests.RequestException:
             return []
 
-    def chat_stream(self, model: str, messages: List[Dict[str, str]], system_prompt: str = None, stop_event: threading.Event = None) -> Generator[str, None, None]:
+    def chat_stream(self, model: str, messages: List[Dict[str, str]], system_prompt: str = None, stop_event: threading.Event = None) -> Generator[Dict[str, str], None, None]:
         """
         Streams the chat response from the Ollama server.
+        Yields dictionaries: {"type": "content"|"error", "content": str}
         """
         payload = {
             "model": model,
@@ -46,13 +46,13 @@ class OllamaClient:
                         try:
                             body = json.loads(line.decode('utf-8'))
                             if "message" in body and "content" in body["message"]:
-                                yield body["message"]["content"]
+                                yield {"type": "content", "content": body["message"]["content"]}
                             if body.get("done", False):
                                 break
                         except json.JSONDecodeError:
                             continue
         except requests.RequestException as e:
-            yield f"\n[Connection Error: {e}]"
+            yield {"type": "error", "content": str(e)}
 
     def pull_model(self, name: str) -> Generator[Dict[str, Any], None, None]:
         """
@@ -70,11 +70,3 @@ class OllamaClient:
                             continue
         except requests.RequestException as e:
             yield {"error": str(e)}
-
-    def check_connection(self) -> bool:
-        """Checks if the server is reachable."""
-        try:
-            requests.get(self.base_url, timeout=2)
-            return True
-        except requests.RequestException:
-            return False

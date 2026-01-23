@@ -14,6 +14,14 @@ from typing import List, Dict
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("miku_wave.json")
 
+# Theme Constants
+USER_BG_COLOR = "#FF00FF"     # Hot Pink (User)
+USER_TEXT_COLOR = "#FFFFFF"   # White (User)
+AI_BG_COLOR = "#16213E"       # Dark Navy (AI)
+AI_TEXT_COLOR = "#39C5BB"     # Miku Teal (AI)
+CODE_BG_COLOR = "#0F0F1A"     # Darker Navy (Code)
+BORDER_COLOR = "#39C5BB"      # Teal Border
+
 class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent, current_url, current_system_prompt):
         super().__init__(parent)
@@ -54,7 +62,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
 class CodeBlock(ctk.CTkFrame):
     def __init__(self, master, code: str, **kwargs):
-        super().__init__(master, fg_color="#0F0F1A", corner_radius=6, border_width=1, border_color="#39C5BB", **kwargs)
+        super().__init__(master, fg_color=CODE_BG_COLOR, corner_radius=6, border_width=1, border_color=BORDER_COLOR, **kwargs)
         self.code = code.strip()
 
         # Header (Language + Copy)
@@ -62,7 +70,7 @@ class CodeBlock(ctk.CTkFrame):
         header_frame.pack(fill="x", padx=1, pady=1)
         
         # Try to detect language from first line if possible (simplified)
-        lang_label = ctk.CTkLabel(header_frame, text="Code", font=("Consolas", 12, "bold"), text_color="#39C5BB")
+        lang_label = ctk.CTkLabel(header_frame, text="Code", font=("Consolas", 12, "bold"), text_color=AI_TEXT_COLOR)
         lang_label.pack(side="left", padx=10, pady=2)
 
         self.copy_btn = ctk.CTkButton(
@@ -71,7 +79,7 @@ class CodeBlock(ctk.CTkFrame):
             width=60, 
             height=20, 
             font=("Arial", 11),
-            fg_color="#39C5BB", 
+            fg_color=AI_TEXT_COLOR, 
             text_color="#1A1A2E",
             hover_color="#2D9E96",
             command=self.copy_to_clipboard
@@ -95,11 +103,11 @@ class CodeBlock(ctk.CTkFrame):
         self.clipboard_clear()
         self.clipboard_append(self.code)
         self.copy_btn.configure(text="Copied!", fg_color="#FF00FF", text_color="#FFFFFF")
-        self.after(2000, lambda: self.copy_btn.configure(text="Copy", fg_color="#39C5BB", text_color="#1A1A2E"))
+        self.after(2000, lambda: self.copy_btn.configure(text="Copy", fg_color=AI_TEXT_COLOR, text_color="#1A1A2E"))
 
 class ThinkBlock(ctk.CTkFrame):
     def __init__(self, master, text: str, **kwargs):
-        super().__init__(master, fg_color="#0F0F1A", corner_radius=6, border_width=1, border_color="#555555", **kwargs)
+        super().__init__(master, fg_color=CODE_BG_COLOR, corner_radius=6, border_width=1, border_color="#555555", **kwargs)
         self.text = text
         self.is_expanded = False
 
@@ -120,12 +128,18 @@ class ThinkBlock(ctk.CTkFrame):
             self, 
             text=text, 
             text_color="#AAAAAA", 
-            wraplength=550, 
+            wraplength=master.winfo_width() - 60, # Initial guess
             justify="left",
             font=("Roboto", 12, "italic")
         )
         # Initially hidden
         
+        # Bind resize to update wraplength
+        self.bind("<Configure>", self.update_wraplength)
+
+    def update_wraplength(self, event):
+        self.content_label.configure(wraplength=event.width - 20)
+
     def toggle(self):
         self.is_expanded = not self.is_expanded
         if self.is_expanded:
@@ -149,18 +163,34 @@ class ChatMessage(ctk.CTkFrame):
         
         # Style configuration
         if role == "user":
-            self.fg_color = "#FF00FF" # Neon Pink (Hot Pink)
-            self.text_color = "#FFFFFF" # White text on Pink
+            self.fg_color = USER_BG_COLOR
+            self.text_color = USER_TEXT_COLOR
             self.align = "e"
             self.lbl_anchor = "e"
+            border = USER_BG_COLOR
         else:
-            self.fg_color = "#16213E" # Dark Blue/Navy
-            self.text_color = "#39C5BB" # Miku Teal text
+            self.fg_color = AI_BG_COLOR
+            self.text_color = AI_TEXT_COLOR
             self.align = "w"
             self.lbl_anchor = "w"
+            border = BORDER_COLOR
 
-        self.configure(fg_color=self.fg_color, border_width=2, border_color="#39C5BB" if role == "assistant" else "#FF00FF")
+        self.configure(fg_color=self.fg_color, border_width=2, border_color=border)
+        
+        # Listen for resize events on the PARENT (the scrollable frame's inner frame) to update text wrapping
+        self.bind("<Configure>", self.on_resize)
+        
         self.render_content()
+
+    def on_resize(self, event):
+        # Update wraplength for all text labels
+        # Width - padding (approx 40px)
+        new_wrap = event.width - 40
+        if new_wrap < 100: new_wrap = 100
+        
+        for b_type, widget in self.block_widgets:
+            if b_type == 'TEXT':
+                widget.configure(wraplength=new_wrap)
 
     def update_text(self, new_text):
         if self.text_content == new_text:
@@ -220,8 +250,8 @@ class ChatMessage(ctk.CTkFrame):
         if len(new_blocks) != len(self.block_widgets):
             can_update = False
         else:
-            for i, (b_type, b_content) in enumerate(new_blocks):
-                w_type, widget = self.block_widgets[i]
+            for i, (b_type, _) in enumerate(new_blocks):
+                w_type, _ = self.block_widgets[i]
                 if b_type != w_type:
                     can_update = False
                     break
@@ -248,6 +278,9 @@ class ChatMessage(ctk.CTkFrame):
             widget.destroy()
         self.block_widgets = []
 
+        current_width = self.winfo_width()
+        wrap_len = current_width - 40 if current_width > 100 else 550
+
         for b_type, content in new_blocks:
             if b_type == 'CODE':
                 code_block = CodeBlock(self, code=content)
@@ -261,7 +294,7 @@ class ChatMessage(ctk.CTkFrame):
                 label = ctk.CTkLabel(
                     self, 
                     text=content, 
-                    wraplength=550, 
+                    wraplength=wrap_len, 
                     justify="left", 
                     text_color=self.text_color,
                     anchor=self.lbl_anchor,
@@ -431,8 +464,12 @@ class OllamaApp(ctk.CTk):
         full_response = ""
         # Pass stop_event to the client
         for chunk in self.client.chat_stream(model, history, system_prompt, self.stop_event):
-            full_response += chunk
-            self.msg_queue.put({"type": "chunk", "content": full_response})
+            if chunk["type"] == "content":
+                full_response += chunk["content"]
+                self.msg_queue.put({"type": "chunk", "content": full_response})
+            elif chunk["type"] == "error":
+                self.msg_queue.put({"type": "error", "message": chunk["content"]})
+                break
         
         self.msg_queue.put({"type": "done", "full_text": full_response})
 
@@ -445,6 +482,11 @@ class OllamaApp(ctk.CTk):
                 elif msg["type"] == "done":
                     self.target_text = msg["full_text"]
                     self.network_active = False
+                elif msg["type"] == "error":
+                    self.network_active = False
+                    self.is_generating = False
+                    messagebox.showerror("Network Error", msg["message"])
+                    self.send_btn.configure(text="Send", fg_color=["#3B8ED0", "#1F6AA5"], hover_color=["#36719F", "#144870"])
         except queue.Empty:
             pass
         
@@ -469,8 +511,11 @@ class OllamaApp(ctk.CTk):
             if diff > 20:
                 step = 5
                 delay = 10
-            if diff > 50: # Very far behind
-                step = 10
+            if diff > 50:
+                step = 15
+                delay = 5
+            if diff > 200: # Instant catch up for huge chunks (e.g. paste or rapid buffer fill)
+                step = diff
                 delay = 5
 
             self.displayed_text = self.target_text[:len(self.displayed_text) + step]
