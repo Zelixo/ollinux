@@ -19,7 +19,6 @@ USER_BG_COLOR = "#FF00FF"     # Hot Pink (User)
 USER_TEXT_COLOR = "#FFFFFF"   # White (User)
 AI_BG_COLOR = "#16213E"       # Dark Navy (AI)
 AI_TEXT_COLOR = "#39C5BB"     # Miku Teal (AI)
-CODE_BG_COLOR = "#0F0F1A"     # Darker Navy (Code)
 BORDER_COLOR = "#39C5BB"      # Teal Border
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -28,21 +27,17 @@ class SettingsDialog(ctk.CTkToplevel):
         self.title("Settings")
         self.geometry("400x300")
         self.parent = parent
-        self.transient(parent) # Make it modal-like
-        
-        # Ensure window is on top and visible before grabbing focus
+        self.transient(parent)
         self.lift()
         self.focus_force()
         self.after(100, self.grab_set)
         
-        # URL
         self.url_label = ctk.CTkLabel(self, text="Ollama URL:")
         self.url_label.pack(padx=20, pady=(20, 5), anchor="w")
         self.url_entry = ctk.CTkEntry(self, width=300)
         self.url_entry.insert(0, current_url)
         self.url_entry.pack(padx=20, pady=5)
         
-        # System Prompt
         self.prompt_label = ctk.CTkLabel(self, text="System Prompt:")
         self.prompt_label.pack(padx=20, pady=(10, 5), anchor="w")
         self.prompt_text = ctk.CTkTextbox(self, width=300, height=100)
@@ -50,7 +45,6 @@ class SettingsDialog(ctk.CTkToplevel):
             self.prompt_text.insert("0.0", current_system_prompt)
         self.prompt_text.pack(padx=20, pady=5)
         
-        # Save Button
         self.save_btn = ctk.CTkButton(self, text="Save", command=self.save_settings)
         self.save_btn.pack(padx=20, pady=20)
         
@@ -60,355 +54,118 @@ class SettingsDialog(ctk.CTkToplevel):
         self.parent.update_settings(new_url, new_prompt)
         self.destroy()
 
-class CodeBlock(ctk.CTkFrame):
-    def __init__(self, master, code: str, **kwargs):
-        super().__init__(master, fg_color=CODE_BG_COLOR, corner_radius=6, border_width=1, border_color=BORDER_COLOR, **kwargs)
-        self.code = code.strip()
-
-        # Header (Language + Copy)
-        header_frame = ctk.CTkFrame(self, fg_color="#1A1A2E", height=30, corner_radius=6)
-        header_frame.pack(fill="x", padx=1, pady=1)
+class RichTextDisplay(ctk.CTkTextbox):
+    def __init__(self, master, text: str = "", font_size=16, text_color="white", **kwargs):
+        super().__init__(master, text_color=text_color, fg_color="transparent", wrap="word", height=0, font=("Roboto", font_size), **kwargs)
+        self.font_size = font_size
         
-        # Try to detect language from first line if possible (simplified)
-        lang_label = ctk.CTkLabel(header_frame, text="Code", font=("Consolas", 12, "bold"), text_color=AI_TEXT_COLOR)
-        lang_label.pack(side="left", padx=10, pady=2)
-
-        self.copy_btn = ctk.CTkButton(
-            header_frame, 
-            text="Copy", 
-            width=60, 
-            height=20, 
-            font=("Arial", 11),
-            fg_color=AI_TEXT_COLOR, 
-            text_color="#1A1A2E",
-            hover_color="#2D9E96",
-            command=self.copy_to_clipboard
-        )
-        self.copy_btn.pack(side="right", padx=5, pady=2)
-
-        # Code Content
-        self.code_text = ctk.CTkTextbox(
-            self, 
-            height=len(self.code.split('\n')) * 24 + 20, 
-            font=("Consolas", 14), 
-            text_color="#EAEAEA",
-            fg_color="transparent",
-            wrap="none"
-        )
-        self.code_text.insert("0.0", self.code)
-        self.code_text.configure(state="disabled")
-        self.code_text.pack(fill="x", padx=5, pady=5)
-
-    def copy_to_clipboard(self):
-        self.clipboard_clear()
-        self.clipboard_append(self.code)
-        self.copy_btn.configure(text="Copied!", fg_color="#FF00FF", text_color="#FFFFFF")
-        self.after(2000, lambda: self.copy_btn.configure(text="Copy", fg_color=AI_TEXT_COLOR, text_color="#1A1A2E"))
-
-class ThinkBlock(ctk.CTkFrame):
-    def __init__(self, master, text: str, **kwargs):
-        super().__init__(master, fg_color=CODE_BG_COLOR, corner_radius=6, border_width=1, border_color="#555555", **kwargs)
-        self.text = text
-        self.is_expanded = False
-
-        self.header_btn = ctk.CTkButton(
-            self, 
-            text="▶ Thinking Process", 
-            fg_color="transparent", 
-            text_color="#888888", 
-            hover_color="#1A1A2E",
-            anchor="w",
-            command=self.toggle,
-            height=24,
-            font=("Roboto", 14, "italic")
-        )
-        self.header_btn.pack(fill="x", padx=5, pady=2)
+        # Fonts
+        self.code_font = ctk.CTkFont(family="monospace", size=int(font_size * 0.95))
+        self.header_font = ctk.CTkFont(family="Roboto", size=int(font_size * 1.3), weight="bold")
         
-        self.content_label = ctk.CTkLabel(
-            self, 
-            text=text, 
-            text_color="#AAAAAA", 
-            wraplength=master.winfo_width() - 60, # Initial guess
-            justify="left",
-            font=("Roboto", 14, "italic")
-        )
-        # Initially hidden
+        # Configure Tags
+        self._textbox.tag_config("bold", font=ctk.CTkFont(family="Roboto", size=font_size, weight="bold"))
+        self._textbox.tag_config("italic", font=ctk.CTkFont(family="Roboto", size=font_size, slant="italic"))
+        self._textbox.tag_config("code_block", font=self.code_font, background="#1E1E2E", foreground="#F8F8F2", lmargin1=10, lmargin2=10, rmargin=10, spacing1=5, spacing3=5)
+        self._textbox.tag_config("header", font=self.header_font, foreground="#39C5BB", spacing3=10)
         
-        # Bind resize to update wraplength
-        self.bind("<Configure>", self.update_wraplength)
+        # State
+        self.in_code_block = False
+        self.buffer = ""
+        
+        self.configure(state="disabled")
+        if text:
+            self.append_text(text)
+            
+        self.bind("<Configure>", self.adjust_height)
 
-    def update_wraplength(self, event):
-        self.content_label.configure(wraplength=event.width - 20)
+    def adjust_height(self, event=None):
+        try:
+            num_lines = self._textbox.count("1.0", "end", "displaylines")[0]
+            pixel_height = num_lines * (self.font_size * 1.5) + 30
+            
+            current_height = self.cget("height")
+            if abs(pixel_height - current_height) > 5:
+                self.unbind("<Configure>")
+                self.configure(height=max(50, pixel_height))
+                self.after(10, lambda: self.bind("<Configure>", self.adjust_height))
+        except:
+            pass
 
-    def toggle(self):
-        self.is_expanded = not self.is_expanded
-        if self.is_expanded:
-            self.header_btn.configure(text="▼ Thinking Process")
-            self.content_label.pack(fill="x", padx=10, pady=(0, 10))
+    def append_text(self, text):
+        self.configure(state="normal")
+        self.buffer += text
+        
+        while '\n' in self.buffer:
+            line, self.buffer = self.buffer.split('\n', 1)
+            self._process_line(line + '\n')
+            
+        if self.buffer:
+            # If buffer starts with code fence, wait for more data
+            if not self.buffer.strip().startswith('`'):
+                self._process_text_chunk(self.buffer)
+                self.buffer = ""
+
+        self.configure(state="disabled")
+        self.adjust_height()
+
+    def _process_line(self, line):
+        if line.strip().startswith('```'):
+            self.in_code_block = not self.in_code_block
+            return
+        self._process_text_chunk(line)
+
+    def _process_text_chunk(self, text):
+        tags = []
+        if self.in_code_block:
+            tags.append("code_block")
         else:
-            self.header_btn.configure(text="▶ Thinking Process")
-            self.content_label.pack_forget()
-
-    def update_content(self, new_text):
-        if self.text != new_text:
-            self.text = new_text
-            self.content_label.configure(text=new_text)
+            if text.strip().startswith('#'):
+                tags.append("header")
+        
+        self.insert("end", text, tuple(tags))
 
 class ChatMessage(ctk.CTkFrame):
     def __init__(self, master, role: str, text: str, **kwargs):
         super().__init__(master, **kwargs)
         self.role = role
-        self.text_content = text
-        self.block_widgets = [] # List of (type, widget) tuples
         
-        # Style configuration
         if role == "user":
             self.fg_color = USER_BG_COLOR
             self.text_color = USER_TEXT_COLOR
             self.align = "e"
-            self.lbl_anchor = "e"
         else:
             self.fg_color = AI_BG_COLOR
             self.text_color = AI_TEXT_COLOR
             self.align = "w"
-            self.lbl_anchor = "w"
 
-        # Polished Look: No border, rounder corners for bubble effect
         self.configure(fg_color=self.fg_color, corner_radius=16)
         
-        # Listen for resize events on the PARENT (the scrollable frame's inner frame) to update text wrapping
-        self.bind("<Configure>", self.on_resize)
-        
-        self.render_content()
+        self.content_display = RichTextDisplay(self, text=text, text_color=self.text_color)
+        self.content_display.pack(fill="both", expand=True, padx=15, pady=10)
 
-    def on_resize(self, event):
-        # Update wraplength for all text labels
-        # Width - padding (approx 40px)
-        new_wrap = event.width - 50 # Increased buffer
-        if new_wrap < 100: new_wrap = 100
-        list_wrap = new_wrap - 20
-        
-        for b_type, widget in self.block_widgets:
-            if b_type == 'TEXT' or b_type.startswith('HEADER'):
-                widget.configure(wraplength=new_wrap)
-            elif b_type == 'LIST_ITEM':
-                widget.configure(wraplength=list_wrap)
-
-    def update_text(self, new_text):
-        if self.text_content == new_text:
-            return
-        self.text_content = new_text
-        self.render_content()
-
-    def _parse_blocks(self, text):
-        """Parses text into a list of (type, content) tuples, handling Code and Markdown blocks."""
-        blocks = []
-        
-        # 1. Split by <think>...</think> first
-        think_parts = re.split(r'(<think>[\s\S]*?</think>)', text)
-        
-        for t_part in think_parts:
-            if not t_part: continue
-            
-            if t_part.startswith('<think>') and t_part.endswith('</think>'):
-                content = t_part[7:-8].strip()
-                if content:
-                    blocks.append(('THINK', content))
-            elif t_part.startswith('<think>'): 
-                content = t_part[7:].strip()
-                blocks.append(('THINK', content))
-            else:
-                # 2. Split by Code Blocks
-                code_parts = re.split(r'(```[\s\S]*?```)', t_part)
-                for i, c_part in enumerate(code_parts):
-                    if not c_part: continue
-                    
-                    if c_part.startswith('```') and c_part.endswith('```'):
-                         content = c_part[3:-3]
-                         first_newline = content.find('\n')
-                         if first_newline != -1 and first_newline < 20:
-                            first_line = content[:first_newline].strip()
-                            if first_line.isalnum():
-                                content = content[first_newline+1:]
-                         blocks.append(('CODE', content))
-                    elif c_part.startswith('```') and i == len(code_parts) - 1 and len(code_parts) > 1:
-                         content = c_part[3:]
-                         blocks.append(('CODE', content))
-                    else:
-                         if c_part.strip():
-                             # 3. Parse Markdown Blocks (Headers, Lists) within text
-                             self._parse_markdown_text(c_part, blocks)
-
-        return blocks
-
-    def _parse_markdown_text(self, text, blocks_list):
-        """Sub-parses text for Headers and Lists."""
-        lines = text.split('\n')
-        current_paragraph = []
-
-        def flush_paragraph():
-            if current_paragraph:
-                blocks_list.append(('TEXT', '\n'.join(current_paragraph)))
-                current_paragraph.clear()
-
-        for line in lines:
-            stripped = line.strip()
-            
-            # Header (### Title)
-            if stripped.startswith('#'):
-                # Count hashes
-                hashes = 0
-                for char in stripped:
-                    if char == '#': hashes += 1
-                    else: break
-                
-                if 1 <= hashes <= 6 and len(stripped) > hashes and stripped[hashes] == ' ':
-                    flush_paragraph()
-                    content = stripped[hashes:].strip()
-                    # Limit level to reasonable range
-                    level = hashes
-                    if level > 3: level = 3
-                    blocks_list.append((f'HEADER_{level}', content))
-                    continue
-
-            # List Item (- Item or * Item)
-            if stripped.startswith(('-', '*')) and len(stripped) > 1 and stripped[1] == ' ':
-                flush_paragraph()
-                content = stripped[1:].strip()
-                blocks_list.append(('LIST_ITEM', content))
-                
-            else:
-                current_paragraph.append(line)
-        
-        flush_paragraph()
-
-    def render_content(self):
-        new_blocks = self._parse_blocks(self.text_content)
-        
-        # Check if we can just update existing widgets
-        can_update = True
-        if len(new_blocks) != len(self.block_widgets):
-            can_update = False
-        else:
-            for i, (b_type, _) in enumerate(new_blocks):
-                w_type, _ = self.block_widgets[i]
-                if b_type != w_type:
-                    can_update = False
-                    break
-        
-        if can_update:
-            # FAST PATH: Update content
-            for i, (b_type, b_content) in enumerate(new_blocks):
-                _, widget = self.block_widgets[i]
-                if b_type == 'TEXT':
-                     widget.configure(text=b_content)
-                elif b_type.startswith('HEADER'):
-                     widget.configure(text=b_content)
-                elif b_type == 'LIST_ITEM':
-                     widget.configure(text=f"• {b_content}")
-                elif b_type == 'CODE':
-                     if widget.code != b_content.strip():
-                        widget.code = b_content.strip()
-                        widget.code_text.configure(state="normal")
-                        widget.code_text.delete("0.0", "end")
-                        widget.code_text.insert("0.0", widget.code)
-                        widget.code_text.configure(state="disabled")
-                elif b_type == 'THINK':
-                    widget.update_content(b_content)
-            return
-
-        # SLOW PATH: Rebuild everything
-        for _, widget in self.block_widgets:
-            widget.destroy()
-        self.block_widgets = []
-
-        current_width = self.winfo_width()
-        # Dynamic wraplength
-        wrap_len = current_width - 50 if current_width > 100 else 550
-        list_wrap_len = wrap_len - 20 # Indent compensation
-
-        for b_type, content in new_blocks:
-            if b_type == 'CODE':
-                code_block = CodeBlock(self, code=content)
-                code_block.pack(fill="x", padx=15, pady=8, anchor="w")
-                self.block_widgets.append(('CODE', code_block))
-            elif b_type == 'THINK':
-                think_block = ThinkBlock(self, text=content)
-                think_block.pack(fill="x", padx=15, pady=8, anchor="w")
-                self.block_widgets.append(('THINK', think_block))
-            elif b_type.startswith('HEADER'):
-                # Heuristics for size: H1=24, H2=20, H3+=18
-                size = 24 if '1' in b_type else (20 if '2' in b_type else 18)
-                label = ctk.CTkLabel(
-                    self, 
-                    text=content, 
-                    wraplength=wrap_len, 
-                    justify="left", 
-                    text_color="#39C5BB", # Miku Teal for headers
-                    anchor=self.lbl_anchor,
-                    font=("Roboto", size, "bold")
-                )
-                label.pack(padx=20, pady=(15, 5), anchor=self.align)
-                self.block_widgets.append((b_type, label))
-            elif b_type == 'LIST_ITEM':
-                 label = ctk.CTkLabel(
-                    self, 
-                    text=f"• {content}", 
-                    wraplength=list_wrap_len, 
-                    justify="left", 
-                    text_color=self.text_color,
-                    anchor=self.lbl_anchor,
-                    font=("Roboto", 16)
-                )
-                 # Indented pack
-                 label.pack(padx=(35, 20), pady=2, anchor=self.align)
-                 self.block_widgets.append((b_type, label))
-            else: # TEXT
-                label = ctk.CTkLabel(
-                    self, 
-                    text=content, 
-                    wraplength=wrap_len, 
-                    justify="left", 
-                    text_color=self.text_color,
-                    anchor=self.lbl_anchor,
-                    font=("Roboto", 16)
-                )
-                label.pack(padx=20, pady=5, anchor=self.align)
-                self.block_widgets.append(('TEXT', label))
+    def append_text(self, text):
+        self.content_display.append_text(text)
 
 class OllamaApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-
-        # Window Setup
         self.title("Ollama Chat Pro")
         self.geometry("1000x700")
-        
-        # Load Config
         self.config = ConfigManager.load_config()
-        
-        # State
         self.client = OllamaClient(base_url=self.config.get("ollama_url", "http://localhost:11434"))
         self.msg_queue = queue.Queue()
         self.chat_history: List[Dict[str, str]] = [] 
         self.is_generating = False
         self.stop_event = threading.Event()
         self.system_prompt = self.config.get("system_prompt", "")
+        self.full_response_buffer = "" 
         
-        self.target_text = ""
-        self.displayed_text = ""
-        self.network_active = False
-        
-        # Layout Config
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
-
-        # UI Components
         self.create_sidebar()
         self.create_chat_area()
         self.create_input_area()
-
-        # Initial Load
         self.load_models()
         self.check_queue()
 
@@ -437,8 +194,6 @@ class OllamaApp(ctk.CTk):
         
         self.load_btn = ctk.CTkButton(self.sidebar_frame, text="Load Chat", command=self.load_chat_history)
         self.load_btn.grid(row=6, column=0, padx=20, pady=(10, 10))
-        
-        # Spacer
         
         self.settings_btn = ctk.CTkButton(self.sidebar_frame, text="Settings", command=self.open_settings)
         self.settings_btn.grid(row=8, column=0, padx=20, pady=(10, 20))
@@ -473,141 +228,84 @@ class OllamaApp(ctk.CTk):
         models = self.client.get_models()
         if models:
             self.model_option_menu.configure(values=models)
-            
-            # Restore last used model if available
             last_model = self.config.get("last_model")
             if last_model and last_model in models:
                 self.model_option_menu.set(last_model)
             else:
                 self.model_option_menu.set(models[0])
-                # Update config with default if we had to fall back
                 self.on_model_change(models[0])
         else:
             self.model_option_menu.configure(values=["No Connection"])
 
     def handle_enter(self, event):
-        if event.state & 1: # Shift key mask (usually 1 or 4 depending on OS, but standard in Tk)
-             # Shift+Enter -> Insert newline (default behavior)
-             return None 
-        
-        # Enter -> Send message
-        if not self.is_generating:
-            self.start_generation()
-        return "break" # Prevent default newline insertion
+        if event.state & 1: return None 
+        if not self.is_generating: self.start_generation()
+        return "break"
 
     def handle_send_click(self):
-        if self.is_generating:
-            self.stop_generation()
-        else:
-            self.start_generation()
+        if self.is_generating: self.stop_generation()
+        else: self.start_generation()
 
     def start_generation(self):
         text = self.entry.get("0.0", "end").strip()
-        if not text:
-            return
-            
+        if not text: return
         self.entry.delete("0.0", "end")
         
-        # User Message
         self.add_message("user", text)
         self.chat_history.append({"role": "user", "content": text})
         
-        # Check model
         model = self.model_option_menu.get()
         if model == "Loading..." or model == "No Connection":
-            messagebox.showerror("Error", "No model selected or server unreachable.")
+            messagebox.showerror("Error", "No model selected.")
             return
 
         self.is_generating = True
-        self.network_active = True
         self.stop_event.clear()
         self.send_btn.configure(text="Stop", fg_color="#C62828", hover_color="#B71C1C")
         
-        self.target_text = ""
-        self.displayed_text = ""
+        self.full_response_buffer = ""
         self.current_ai_message = self.add_message("assistant", "")
         
         threading.Thread(target=self._generate_thread, args=(model, list(self.chat_history), self.system_prompt), daemon=True).start()
-        self.smooth_type_loop()
 
     def stop_generation(self):
         self.stop_event.set()
 
     def _generate_thread(self, model, history, system_prompt):
-        full_response = ""
-        # Pass stop_event to the client
         for chunk in self.client.chat_stream(model, history, system_prompt, self.stop_event):
             if chunk["type"] == "content":
-                full_response += chunk["content"]
-                self.msg_queue.put({"type": "chunk", "content": full_response})
+                self.msg_queue.put({"type": "chunk", "content": chunk["content"]})
             elif chunk["type"] == "error":
                 self.msg_queue.put({"type": "error", "message": chunk["content"]})
                 break
-        
-        self.msg_queue.put({"type": "done", "full_text": full_response})
+        self.msg_queue.put({"type": "done"})
 
     def check_queue(self):
         try:
             while True:
                 msg = self.msg_queue.get_nowait()
                 if msg["type"] == "chunk":
-                    self.target_text = msg["content"]
+                    delta = msg["content"]
+                    self.full_response_buffer += delta
+                    if self.current_ai_message:
+                        self.current_ai_message.append_text(delta)
+                        self.chat_frame._parent_canvas.yview_moveto(1.0)
+                        
                 elif msg["type"] == "done":
-                    self.target_text = msg["full_text"]
-                    self.network_active = False
+                    self.finish_generation()
+                    
                 elif msg["type"] == "error":
-                    self.network_active = False
                     self.is_generating = False
                     messagebox.showerror("Network Error", msg["message"])
                     self.send_btn.configure(text="Send", fg_color=["#3B8ED0", "#1F6AA5"], hover_color=["#36719F", "#144870"])
         except queue.Empty:
             pass
         
-        self.after(50, self.check_queue) # Keep processing network events
-
-    def smooth_type_loop(self):
-        if not self.is_generating:
-            return
-
-        # Check if we need to update
-        if len(self.displayed_text) < len(self.target_text):
-            # Calculate step size for smooth catch-up
-            diff = len(self.target_text) - len(self.displayed_text)
-            
-            # Dynamic speed: 
-            step = 1
-            delay = 30 # ms default typing speed
-            
-            if diff > 5:
-                step = 2
-                delay = 20
-            if diff > 20:
-                step = 5
-                delay = 10
-            if diff > 50:
-                step = 15
-                delay = 5
-            if diff > 200: # Instant catch up for huge chunks (e.g. paste or rapid buffer fill)
-                step = diff
-                delay = 5
-
-            self.displayed_text = self.target_text[:len(self.displayed_text) + step]
-            self.current_ai_message.update_text(self.displayed_text)
-            self.chat_frame._parent_canvas.yview_moveto(1.0)
-            
-            self.after(delay, self.smooth_type_loop)
-            
-        elif not self.network_active:
-            # We caught up AND network is done
-            self.finish_generation()
-        else:
-            # Caught up but network still going, wait for more data
-            self.after(50, self.smooth_type_loop)
+        self.after(50, self.check_queue)
 
     def finish_generation(self):
         self.is_generating = False
-        self.network_active = False
-        self.chat_history.append({"role": "assistant", "content": self.displayed_text})
+        self.chat_history.append({"role": "assistant", "content": self.full_response_buffer})
         self.send_btn.configure(text="Send", fg_color=["#3B8ED0", "#1F6AA5"], hover_color=["#36719F", "#144870"])
 
     def add_message(self, role, text):
@@ -626,18 +324,15 @@ class OllamaApp(ctk.CTk):
     def update_settings(self, new_url, new_prompt):
         self.client.base_url = new_url
         self.system_prompt = new_prompt
-        
         self.config["ollama_url"] = new_url
         self.config["system_prompt"] = new_prompt
         ConfigManager.save_config(self.config)
-        
         self.load_models()
 
     def save_chat_history(self):
         if not self.chat_history:
             messagebox.showwarning("Warning", "No chat history to save.")
             return
-            
         file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
         if file_path:
             try:
@@ -653,12 +348,10 @@ class OllamaApp(ctk.CTk):
             try:
                 with open(file_path, 'r') as f:
                     loaded_history = json.load(f)
-                
                 self.clear_chat()
                 self.chat_history = loaded_history
                 for msg in self.chat_history:
                     self.add_message(msg["role"], msg["content"])
-                    
                 messagebox.showinfo("Success", "Chat history loaded successfully.")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load file: {e}")
