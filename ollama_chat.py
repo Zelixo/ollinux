@@ -255,16 +255,24 @@ class ChatMessage(ctk.CTkFrame):
             stripped = line.strip()
             
             # Header (### Title)
-            if stripped.startswith('#') and len(stripped) > 1 and stripped[1] != '#': # Simple check for H1-H6
-                flush_paragraph()
-                level = len(line.split(' ')[0])
-                content = line.lstrip('#').strip()
-                # Limit level to reasonable range
-                if level > 3: level = 3
-                blocks_list.append((f'HEADER_{level}', content))
-            
+            if stripped.startswith('#'):
+                # Count hashes
+                hashes = 0
+                for char in stripped:
+                    if char == '#': hashes += 1
+                    else: break
+                
+                if 1 <= hashes <= 6 and len(stripped) > hashes and stripped[hashes] == ' ':
+                    flush_paragraph()
+                    content = stripped[hashes:].strip()
+                    # Limit level to reasonable range
+                    level = hashes
+                    if level > 3: level = 3
+                    blocks_list.append((f'HEADER_{level}', content))
+                    continue
+
             # List Item (- Item or * Item)
-            elif stripped.startswith(('-', '*')) and len(stripped) > 1 and stripped[1] == ' ':
+            if stripped.startswith(('-', '*')) and len(stripped) > 1 and stripped[1] == ' ':
                 flush_paragraph()
                 content = stripped[1:].strip()
                 blocks_list.append(('LIST_ITEM', content))
